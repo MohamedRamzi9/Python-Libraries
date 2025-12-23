@@ -18,6 +18,12 @@ class Time:
         return Time(hours, minutes)
     def __str__(self):
         return f"{self.hour:02}:{self.minute:02}"
+    
+    @staticmethod
+    def parse_time(time_str):
+        """Parses a time string in the format 'hh-mm' and returns a Time object."""
+        hour, minute = map(int, time_str.split('-'))
+        return Time(hour, minute)
 
 class Task:
     """
@@ -82,3 +88,38 @@ class Activity:
     def default_format(activity):
         start_time = activity.start_time
         return f"{activity.name} ({start_time}-{start_time + activity.duration})"
+
+
+if __name__ == "__main__":
+    from containers import Array
+
+    schedule = Array([])
+
+    print("Welcome to the schedule app")
+    print("Enter 'l' to list all tasks")
+    print("Enter 'a' to add a new task")
+    print("Enter 'q' to quit")
+
+    choice = input("Enter your choice: ")
+
+    while choice != 'q':
+
+        if choice == 'l':
+            schedule.print(format=Activity.default_format)
+        elif choice == 'a':
+            name = input("Enter task name: ")
+            description = input("Enter task description: ")
+            start_time = Time.parse_time(input("Enter start time hh-mm: "))
+            end_time = Time.parse_time(input("Enter end time hh-mm: "))
+            priority = int(input("Enter task priority (1-10): "))
+
+            task = Task(None, name, description, start_time, end_time, priority)
+            schedule.append(task)
+
+            print("Task added successfully!")
+        else:
+            print("Invalid choice!")
+
+        choice = input("Enter your choice: ")
+
+    print("Goodbye!")
