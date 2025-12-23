@@ -1,96 +1,14 @@
-"""
-- app to create schedules for items
-- the schedule is a list of items
-- the app should be able to :
-    - append items
-    - instert at a specific position
-    - get number of items
-    - remove items
-    - get items by name (regex), id, index
-    - modify items details 
-    - reorder items by priority, start time, or end time
-    - reorder items manually via a list of ids, indexes, or names
-    - iterate over items
-    - write the schedule to any output stream (allow the user to define the format of each item)
-    - print the schedule to console
-
-- some predefined items are :
-    - Task : has the following properties :
-        - a name
-        - a description
-        - a start time : object representing a point in time
-        - an end time : same as start time
-        - a priority
-        - an id (either auto-generated or user-defined)
-    - Activity : has the following properties :
-        - a name
-        - a start time : object representing a point in time
-        - a duration : in minutes
-"""
 
 from io import StringIO
 
-
-class Task:
-    def __init__(self, task_id, name, description, start_time, end_time, priority):
-        self.id = Task.get_id(task_id)
-        self.name = name
-        self.description = description
-        self.start_time = start_time
-        self.end_time = end_time
-        self.priority = priority
-
-    auto_id = 0
-    @staticmethod
-    def get_id(id):
-        if id is None:
-            Task.auto_id += 1
-            return Task.auto_id
-        return id
-    
-    @staticmethod
-    def default_format(task):
-        return f"[{task.id}] {task.name} ({task.start_time}-{task.end_time}) Priority: {task.priority} :: {task.description}"
-
-    def get_name(self): return self.name
-    def set_name(self, name): self.name = name
-    def get_description(self): return self.description
-    def set_description(self, description): self.description = description
-    def get_start_time(self): return self.start_time
-    def set_start_time(self, start_time): self.start_time = start_time
-    def get_end_time(self): return self.end_time
-    def set_end_time(self, end_time): self.end_time = end_time
-    def get_priority(self): return self.priority
-    def set_priority(self, priority): self.priority = priority
-
-class Activity:
-
-    class Time:
-        def __init__(self, hour, minute):
-            self.hour = hour
-            self.minute = minute
-        
-        def __add__(self, duration):
-            minutes = self.minute + duration
-            hours = self.hour + minutes // 60
-            minutes = minutes % 60
-            return Activity.Time(hours, minutes)
-        def __str__(self):
-            return f"{self.hour:02}:{self.minute:02}"
-        
-    def __init__(self, name, start_time, duration):
-        self.name = name
-        self.start_time = start_time
-        self.duration = duration
-    
-    @staticmethod
-    def default_format(activity):
-        start_time = activity.start_time
-        return f"{activity.name} ({start_time}-{start_time + activity.duration})"
-
-class Schedule:
-
+class Array:
+    """
+    A class wrapper over a list that provides additional helpful methods in daily usage.
+    """
     class Wrapper:
+        """
+        A class representing a wrapped item in the Array, containing the item itself and its index in the Array.
+        """
         def __init__(self, item, index):
             self.item = item
             self.index = index
@@ -98,41 +16,65 @@ class Schedule:
     def __init__(self, items):
         self.items = items
 
-    def append(self, task):
-        self.items.append(task)
+    def append(self, item):
+        """Appends an item to the end of the Array."""
+        self.items.append(item)
     
-    def insert(self, index, task):
-        self.items.insert(index, task)
-
+    def insert(self, index, item):
+        """Inserts an item at the specified index in the Array."""
+        self.items.insert(index, item)
     def count(self):
+        """Returns the number of items in the Array."""
         return len(self.items)
     
-    def remove(self, task_wrapper): 
-        self.items.pop(task_wrapper.index)
+    def remove(self, item_wrapper): 
+        """Removes an item from the Array using its wrapper."""
+        self.items.pop(item_wrapper.index)
 
     def get_by_index(self, index):
-        return Task.Wrapper(self.items[index], index)
+        """Returns the item wrapper at the specified index."""
+        return self.wrapper(self.items[index], index)
     def get(self, filter):
-        for index, task in enumerate(self.items):
-            if filter(task):
-                return Task.Wrapper(task, index) 
+        """Returns the first item wrapper that matches the filter function, or None if no match is found."""
+        for index, item in enumerate(self.items):
+            if filter(item):
+                return self.wrapper(item, index) 
         return None
 
     def reorder(self, key, decending=True):
+        """
+        Reorders the Array items based on the specified key function and order.
+        - key : function that takes an item and returns the value to sort by
+        - decending : boolean indicating whether to sort in decending order or ascending order
+        """
         self.items.sort(key=key, reverse=decending)
 
     def reorder_exact(self, order, key):
+        """
+        Reorders the Array items to match the exact order specified in the order list based on the key function.
+        - order : list of values of some property of the items in the Array
+        - key : function that takes an item and returns the value of the property to be matched with the order list
+        """
         for index in range(len(order)):
-            for i, task in enumerate(self.items):
-                if key(task) == order[index]:
+            for i, item in enumerate(self.items):
+                if key(item) == order[index]:
                     self.items[index], self.items[i] = self.items[i], self.items[index]
                     break
 
     def write(self, output, format):
+        """
+        Writes the formatted representation of each item in the Array to the given output.
+        - output : a file-like object with a write method
+        - format : a function that takes an item and returns its string representation
+        """
         for item in self.items:
             output.write(format(item) + "\n")
 
     def print(self, format):
+        """
+        Writes all elements of the Array to the standard output using the specified format function.
+        - format : a function that takes an item and returns its string representation
+        """
         output = StringIO()
         self.write(output, format)
         print(output.getvalue())
@@ -143,14 +85,6 @@ class Schedule:
         for index, item in enumerate(self.items):
             yield self.wrapper(item, index)
     def wrapper(self, item, index):
-        return Schedule.Wrapper(item, index)
+        return Array.Wrapper(item, index)
 
 
-if __name__ == "__main__":
-    schedule = Schedule([])
-
-    schedule.append(Activity("Activity 1", Activity.Time(9, 0), 60))
-    schedule.append(Activity("Activity 2", Activity.Time(10, 30), 90))
-    schedule.append(Activity("Activity 3", Activity.Time(13, 0), 120))
-
-    schedule.print(Activity.default_format)
