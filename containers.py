@@ -41,17 +41,17 @@ class Array:
                 return self.wrapper(item, index) 
         return None
 
-    def reorder(self, key, decending=True):
+    def sort(self, key, decending=True):
         """
-        Reorders the Array items based on the specified key function and order.
+        Sorts the Array items based on the specified key function and order.
         - key : function that takes an item and returns the value to sort by
         - decending : boolean indicating whether to sort in decending order or ascending order
         """
         self.items.sort(key=key, reverse=decending)
 
-    def reorder_exact(self, order, key):
+    def sort_exact(self, order, key):
         """
-        Reorders the Array items to match the exact order specified in the order list based on the key function.
+        Sorts the Array items to match the exact order specified in the order list based on the key function.
         - order : list of values of some property of the items in the Array
         - key : function that takes an item and returns the value of the property to be matched with the order list
         """
@@ -84,7 +84,30 @@ class Array:
     def __iter__(self):
         for index, item in enumerate(self.items):
             yield self.wrapper(item, index)
+    def __len__(self):
+        return len(self.items)
+    def __getitem__(self, index):
+        return self.get_by_index(index)
+    def __setitem__(self, index, item):
+        self.items[index] = item
     def wrapper(self, item, index):
         return Array.Wrapper(item, index)
 
 
+
+if __name__ == "__main__":
+    # Example usage
+    arr = Array([5, 3, 8, 1])
+    arr.append(4)
+    arr.insert(2, 7)
+    print("Count:", arr.count())  # Count: 6
+
+    item_wrapper = arr.get(lambda x: x == 7)
+    if item_wrapper:
+        print("Found item:", item_wrapper.item, "at index:", item_wrapper.index)
+
+    arr.reorder(key=lambda x: x)
+    arr.print(format=lambda x: f"Item: {x}")
+
+    arr.reorder_exact(order=[1, 3, 4, 5, 7, 8], key=lambda x: x)
+    arr.print(format=lambda x: f"Item: {x}")
