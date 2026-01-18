@@ -1,0 +1,10 @@
+[
+    {
+        "name": "model",
+        "version": "1.0",
+        "path": "model.pkl",
+        "additional": {
+            "type": "regression"
+        }
+    }
+]
