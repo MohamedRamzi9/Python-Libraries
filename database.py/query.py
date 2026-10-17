@@ -1,78 +1,7 @@
 
-
-from enum import IntEnum
-from mysql.connector import errorcode
-import mysql
 from io import StringIO
 
-class Code(IntEnum):
-    # Success
-    OK = 0
-
-    # Custom codes
-    OTHER = -1
-    PYTHON_ERROR = -2
-
-    # Connection and authentication
-    ACCESS_DENIED = errorcode.ER_ACCESS_DENIED_ERROR
-    ACCESS_DENIED_DATABASE = errorcode.ER_DBACCESS_DENIED_ERROR
-    UNKNOWN_DATABASE = errorcode.ER_BAD_DB_ERROR
-    UNKNOWN_HOST = errorcode.CR_UNKNOWN_HOST
-    CONNECTION_FAILED = errorcode.CR_CONN_HOST_ERROR
-    CONNECTION_LOST = errorcode.CR_SERVER_LOST
-    SERVER_GONE_AWAY = errorcode.CR_SERVER_GONE_ERROR
-    TOO_MANY_CONNECTIONS = errorcode.ER_CON_COUNT_ERROR
-    SERVER_SHUTDOWN = errorcode.ER_SERVER_SHUTDOWN
-
-    # SQL and database objects
-    SYNTAX_ERROR = errorcode.ER_PARSE_ERROR
-    TABLE_NOT_FOUND = errorcode.ER_NO_SUCH_TABLE
-    COLUMN_NOT_FOUND = errorcode.ER_BAD_FIELD_ERROR
-    DATABASE_EXISTS = errorcode.ER_DB_CREATE_EXISTS
-    TABLE_EXISTS = errorcode.ER_TABLE_EXISTS_ERROR
-    DUPLICATE_ENTRY = errorcode.ER_DUP_ENTRY
-    NO_SUCH_INDEX = errorcode.ER_KEY_DOES_NOT_EXITS
-
-    # Data and constraints
-    FOREIGN_KEY_VIOLATION = errorcode.ER_NO_REFERENCED_ROW_2
-    FOREIGN_KEY_RESTRICT = errorcode.ER_ROW_IS_REFERENCED_2
-    DATA_TOO_LONG = errorcode.ER_DATA_TOO_LONG
-    NULL_NOT_ALLOWED = errorcode.ER_BAD_NULL_ERROR
-    DATA_OUT_OF_RANGE = errorcode.ER_WARN_DATA_OUT_OF_RANGE
-
-    # Transactions and locking
-    DEADLOCK = errorcode.ER_LOCK_DEADLOCK
-    LOCK_WAIT_TIMEOUT = errorcode.ER_LOCK_WAIT_TIMEOUT
-    QUERY_INTERRUPTED = errorcode.ER_QUERY_INTERRUPTED
-
-    # Protocol and unsupported operations
-    COMMANDS_OUT_OF_SYNC = errorcode.CR_COMMANDS_OUT_OF_SYNC
-    NOT_SUPPORTED = errorcode.ER_NOT_SUPPORTED_YET
-
-    # Other MySQL errors
-    UNKNOWN_ERROR = errorcode.ER_UNKNOWN_ERROR
-    UNKNOWN_CLIENT_ERROR = errorcode.CR_UNKNOWN_ERROR
-    INTERNAL_ERROR = errorcode.ER_INTERNAL_ERROR
-    CLIENT_OUT_OF_MEMORY = errorcode.CR_OUT_OF_MEMORY
-
-
-def convert_exception_to_code(err: Exception) -> Code:
-    if isinstance(err, mysql.connector.Error):
-        try:
-            return Code(err.errno)
-        except ValueError:
-            return Code.OTHER
-    return Code.PYTHON_ERROR
-
-
-
-class Column():
-    def __init__(self, name):
-        self.name = name
-
-    def build(self):
-        return f"{self.name}"
-
+class BaseColumn:
     def __eq__(self, other):
         return Expression(self, Expression.EQ, other)
     def __ne__(self, other):
@@ -93,16 +22,38 @@ class Column():
     def __invert__(self):
         return Expression(self, Expression.NOT, None)
 
-class Value():
+class Column(BaseColumn):
+    def __init__(self, name):
+        self.name = name
+
+    def build(self):
+        return self.name, []
+
+class TableColumn(BaseColumn):
+    def __init__(self, table, column):
+        self.table = table
+        self.column = column
+
+    def build(self):
+        return f"{self.table}.{self.column}", []
+    
+class Value:
     def __init__(self, value):
         self.value = value
 
     def build(self):
-        if isinstance(self.value, str):
-            return f"'{self.value}'"
-        return f"{self.value}"
+        return "%s", [self.value]
 
+class Table:
+    def __init__(self, name):
+        self.name = name
 
+    def column(self, column_name):
+        return TableColumn(self.name, column_name)
+    
+    def build(self):
+        return self.name
+    
 class Expression:
     AND = 'AND'
     OR = 'OR'
@@ -121,45 +72,120 @@ class Expression:
     def __invert__(self):
         return Expression(self, self.NOT, None)
 
-
     def __init__(self, left, operator, right=None):
         self.operator = operator
         self.left = left
         self.right = right
 
     def build(self):
+        left_sql, left_parameters = self.left.build()
         if self.operator == self.NOT:
-            return f"NOT ({self.left.build()})"
+            return f"NOT ({left_sql})", left_parameters
         else:
-            return f"({self.left.build()} {self.operator} {self.right.build()})"
+            right_sql, right_parameters = self.right.build()
+            return f"({left_sql} {self.operator} {right_sql})", left_parameters + right_parameters
 
-class Query:
-    SELECT = 'SELECT'
-    INSERT = 'INSERT'
-    UPDATE = 'UPDATE'
-    DELETE = 'DELETE'
+class Join:
+    INNER = 'INNER'
+    LEFT = 'LEFT'
+    RIGHT = 'RIGHT'
+    CROSS = 'CROSS'
 
     def __init__(self):
-        self._type = None
+        self._type = self.INNER
+        self._table = None
+        self._on = None
+    def on(self, condition):
+        self._on = condition
+        return self
+    def table(self, table):
+        self._table = table
+        return self
+    def left(self):
+        self._type = self.LEFT
+        return self
+    def right(self):
+        self._type = self.RIGHT
+        return self
+    def inner(self):
+        self._type = self.INNER
+        return self
+    def cross(self):
+        self._type = self.CROSS
+        return self
+    def build(self):
+        sql = StringIO()
+        sql.write(f"{self._type} JOIN {self._table.build()}")
+        if self._on is not None:
+            on_sql, parameters = self._on.build()
+            sql.write(f" ON {on_sql}")
+            return sql.getvalue(), parameters
+        return sql.getvalue(), []
+    
+def _join_sql_and_parameters(joiner, items):
+    sql_parts = []
+    parameters = []
+    for item in items:
+        sql, values = item.build()
+        sql_parts.append(sql)
+        parameters.extend(values)
+    return joiner.join(sql_parts), parameters
+
+class Select:
+    def __init__(self):
         self._from = []
         self._where = []
         self._column = []
-        self._value = []
+        self._join = []
 
-    def select(self): 
-        self._type = self.SELECT
+    def column(self, *columns):
+        self._column.extend(columns)
         return self
     def from_(self, *tables):
         self._from.extend(tables)
         return self
-    def insert(self):
-        self._type = self.INSERT
-        return self
-    def into(self, *tables):
-        self._from.extend(tables)
-        return self
     def where(self, *conditions):
         self._where.extend(conditions)
+        return self
+    def join(self, *joins):
+        self._join.extend(joins)
+        return self
+
+    def build(self):
+        query = StringIO()
+        parameters = []
+
+        query.write('SELECT ')
+        sql, values = _join_sql_and_parameters(', ', self._column)
+        query.write(sql)
+        parameters.extend(values)
+
+        query.write(' FROM ')
+        query.write(', '.join([table.build() for table in self._from]))
+    
+        if len(self._join) > 0:
+            query.write(' ')
+            sql, values = _join_sql_and_parameters(' ', self._join)
+            query.write(sql)
+            parameters.extend(values)
+        
+        if self._where:
+            query.write(' WHERE ')
+            sql, values = _join_sql_and_parameters(' AND ', self._where)
+            query.write(sql)
+            parameters.extend(values)
+
+        return query.getvalue(), parameters
+
+class InsertInto:
+    def __init__(self):
+        self._into = None
+        self._column = []
+        self._value = []
+        self._select = None
+
+    def into(self, table):
+        self._into = table
         return self
     def column(self, *columns):
         self._column.extend(columns)
@@ -167,42 +193,151 @@ class Query:
     def value(self, *values):
         self._value.extend(values)
         return self
+    def select(self, select_query):
+        self._select = select_query
+        return self
+
+    def build(self):       
+        query = StringIO() 
+        parameters = []
+
+        query.write('INSERT INTO ')
+        query.write(self._into.build())
+
+        if len(self._column) > 0:
+            query.write('(')
+            sql, values = _join_sql_and_parameters(', ', self._column)
+            query.write(sql)
+            parameters.extend(values)
+            query.write(')')
+
+        if self._select is not None:
+            query.write(' ')
+            sql, values = self._select.build()
+            query.write(sql)
+            parameters.extend(values)
+        else:
+            query.write(' VALUES(')
+            sql, values = _join_sql_and_parameters(', ', self._value)
+            query.write(sql)
+            parameters.extend(values)
+            query.write(')')
+
+        return query.getvalue(), parameters
+
+class Delete:
+    def __init__(self):
+        self._from = []
+        self._where = []
+
+    def from_(self, *tables):
+        self._from.extend(tables)
+        return self
+    def where(self, *conditions):
+        self._where.extend(conditions)
+        return self
 
     def build(self):
         query = StringIO()
-        if self._type == self.SELECT:
-            query.write(f'{self._type} ')
-            query.write(', '.join(self._column))
-            query.write(' FROM ')
-            query.write(', '.join(self._from))
-        elif self._type == self.INSERT:
-            query.write(f'{self._type} INTO ')
-            query.write(', '.join(self._from))
-            if len(self._column) > 0:
-                query.write('(')
-                query.write(', '.join(self._column))
-                query.write(')')
-            query.write(' VALUES(')
-            query.write(', '.join([Value(v).build() for v in self._value]))
-            query.write(')')
+        parameters = []
+
+        query.write('DELETE FROM ')
+        query.write(', '.join([table.build() for table in self._from]))
 
         if self._where:
             query.write(' WHERE ')
-            query.write(' AND '.join([expr.build() for expr in self._where]))
-        return query.getvalue()
+            sql, values = _join_sql_and_parameters(' AND ', self._where)
+            query.write(sql)
+            parameters.extend(values)
 
-query = (
-    Query().select()
-    .column('query', 'status', 'is_active').from_('my_table')
-    .where((Column('query') == Value(2)))
-    .where((Column('status') != Value('failed')) | ~Column('is_active'))
-)
-print(query.build())  
+        return query.getvalue(), parameters
 
-query = (
-    Query().insert()
-    .into('my_table')
-    .column('query', 'status', 'is_active')
-    .value(2, 'failed', False)
+class Assignment:
+    def __init__(self, column, value):
+        self.column = column
+        self.value = value
+
+    def build(self):
+        column_sql, column_parameters = self.column.build()
+        value_sql, value_parameters = self.value.build()
+        if isinstance(self.value, Select):
+            sql = f"{column_sql} = ({value_sql})"
+        else:
+            sql = f"{column_sql} = {value_sql}"
+        parameters = column_parameters + value_parameters
+        return sql, parameters
+
+class Update:
+    def __init__(self):
+        self._table = None
+        self._set = []
+        self._where = []
+
+    def table(self, table):
+        self._table = table
+        return self
+    def set(self, *assignments):
+        self._set.extend(assignments)
+        return self
+    def where(self, *conditions):
+        self._where.extend(conditions)
+        return self
+
+    def build(self):
+        query = StringIO()
+        parameters = []
+
+        query.write('UPDATE ')
+        query.write(self._table.build())
+        query.write(' SET ')
+
+        if self._set:
+            sql, values = _join_sql_and_parameters(', ', self._set)
+            query.write(sql)
+            parameters.extend(values)
+
+        if self._where:
+            query.write(' WHERE ')
+            sql, values = _join_sql_and_parameters(' AND ', self._where)
+            query.write(sql)
+            parameters.extend(values)
+
+        return query.getvalue(), parameters
+
+
+table = Table('my_table')
+join_table = Table('other_table')
+
+select_query = (
+    Select()
+    .from_(table)
+    .join(Join().left().table(join_table).on(table.column('id') == join_table.column('my_table_id')))
+    .column(Column('query'), Column('status'), Value(24))
+    .where(Column('query') == Value("ramzi"))
+    .where((Column('status') != Value("active")) | ~Column('is_active'))
 )
-print(query.build())
+print(select_query.build())  
+
+# insert_query = (
+#     InsertInto()
+#     .into(Table('my_table'))
+#     # .column(Column('query'), Column('status'), Column('is_active'))
+#     # .value(Value("ramzi"), Value('failed'), Value(False))
+#     .select(select_query)
+# )
+# print(insert_query.build())
+
+# delete_query = (
+#     Delete()
+#     .from_(Table('my_table'))
+#     .where(Column('query') == Value("ramzi"))
+# )
+# print(delete_query.build())
+
+# update_query = (
+#     Update()
+#     .table(table)
+#     .set(Assignment(table.column('status'), select_query))
+#     .where(table.column('query') == Value("ramzi"))
+# )
+# print(update_query.build())
