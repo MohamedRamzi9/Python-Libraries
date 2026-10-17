@@ -16,6 +16,29 @@ if __name__ == "__main__":
     model_manager.save(model_loader)
     model_manager.load(model_loader)
     metadata = model_manager.find(ModelMetadata.Filter())
+
+    # =======
+
+    category_results, model_results = model_manager.find(
+        ModelManager.Category.Filter(
+            name="model",
+            models=[
+                ModelMetadata.Filter(name="model"),
+                ModelMetadata.Filter(name="another_model")
+            ],
+            categories=[
+                ModelManager.Category.Filter(
+                    name="subcategory",
+                    models=[
+                        ModelMetadata.Filter(name="sub_model")
+                    ]
+                )
+            ]
+        )
+    )
+
+    # =======
+
     if len(metadata) > 0:
         for meta in metadata:
             meta.name = "model"

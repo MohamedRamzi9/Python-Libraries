@@ -58,7 +58,6 @@ class ModelManager:
     class BaseLoaderSaver:
         def __init__(self, path):
             self.path = path
-
     class JsonLoaderSaver(BaseLoaderSaver):
         def load(self):
             with open(self.path, 'r') as f:
@@ -75,7 +74,6 @@ class ModelManager:
                 objects.append(metadata.to_json())
             with open(self.path, 'w') as f:
                 json.dump(objects, f, indent=4)
-
     class PickleLoaderSaver(BaseLoaderSaver):
         def load(self):
             with open(self.path, 'rb') as f:
@@ -84,8 +82,29 @@ class ModelManager:
             with open(self.path, 'wb') as f:
                 pickle.dump(data, f)
 
+    class Category:
+        class Filter:
+            def __init__(self, name=None):
+                self.name = name
+            def match(self, category):
+                if self.name is not None and self.name != category.name:
+                    return False
+                return True
+        
+        def __init__(self, name, description, subcategories=None, models=None):
+            self.name = name
+            self.description = description
+            self.subcategories = subcategories if subcategories is not None else []
+            self.models = models if models is not None else []
+        
+        def find_model(self, filter):
+            results = []
+            if filter.match(self):
+                
+
     def __init__(self):
         self.metadata = []
+        self.categories = []
     
     def find(self, filter):
         results = []
@@ -93,6 +112,8 @@ class ModelManager:
             if filter.match(meta):
                 results.append(meta)
         return results
+
+
     def all(self):
         return self.metadata
     
